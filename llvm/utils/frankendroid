@@ -15,8 +15,8 @@ rm -f $builddir/stage2_*/**/*.o
 ninja -C $builddir hwasan compiler-rt libunwind llvm-objcopy libclang
 
 treename=$(basename $(pwd))
-treepath=$androiddir/prebuilts/clang/host/linux-x86/${treename}.new
-treepath_dest=$androiddir/prebuilts/clang/host/linux-x86/${treename}
+treepath=$androiddir/frankendroid/${treename}.new
+treepath_dest=$androiddir/frankendroid/${treename}
 builddirver=$(grep CLANG_VERSION_MAJOR_STRING $builddir/gen/clang/include/clang/Basic/Version.inc | cut -d\" -f2)
 
 ver=$(grep 'ClangDefaultVersion.*=' $androiddir/build/soong/cc/config/global.go | cut -d\" -f2)
@@ -25,7 +25,8 @@ majorver=$(echo $shortver | cut -d. -f1)
 origpath=$androiddir/prebuilts/clang/host/linux-x86/$ver
 
 rm -rf $treepath
-cp -r $origpath $treepath
+mkdir -p $treepath
+fpsync -v -n 72 $origpath $treepath
 mkdir $treepath/bin.real
 cp $builddir/bin/clang $treepath/bin.real/clang
 cp $builddir/bin/clang $treepath/bin/clang-$majorver
@@ -56,7 +57,7 @@ cp $androiddir/bionic/libc/include/stdatomic.h $treepath/lib/clang/$shortver/inc
 cp $androiddir/bionic/libc/include/bits/stdatomic.h $treepath/lib/clang/$shortver/include/bits/
 
 cp -r $builddir/lib/clang/$builddirver/lib/linux/* $treepath/lib/clang/$shortver/lib/linux/
-python3 $llvm_androiddir/mapfile.py $treepath/lib/clang/$shortver/lib/linux/libclang_rt.hwasan-aarch64-android.so $treepath/lib/clang/$shortver/lib/linux/libclang_rt.hwasan-aarch64-android.map.txt ASAN
+python3 $llvm_androiddir/src/llvm_android/mapfile.py $treepath/lib/clang/$shortver/lib/linux/libclang_rt.hwasan-aarch64-android.so $treepath/lib/clang/$shortver/lib/linux/libclang_rt.hwasan-aarch64-android.map.txt ASAN
 
 ln -s $shortver $treepath/lib/clang/$builddirver
 
