@@ -399,6 +399,7 @@ struct Config {
   bool zDynamicUndefined;
   bool zForceBti;
   bool zForceIbt;
+  bool zGlibc228Compat;
   bool zGlobal;
   bool zHazardplt;
   bool zIfuncNoplt;

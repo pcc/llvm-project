@@ -1619,6 +1619,7 @@ static void readConfigs(Ctx &ctx, opt::InputArgList &args) {
   ctx.arg.zZicfilp = getZZicfilp(ctx, args);
   ctx.arg.zZicfiss = getZZicfiss(ctx, args);
   ctx.arg.zGcs = getZGcs(ctx, args);
+  ctx.arg.zGlibc228Compat = hasZOption(args, "glibc-228-compat");
   ctx.arg.zGlobal = hasZOption(args, "global");
   ctx.arg.zGnustack = getZGnuStack(args);
   ctx.arg.zHazardplt = hasZOption(args, "hazardplt");
