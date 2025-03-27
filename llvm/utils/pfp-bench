@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+#
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+# ==------------------------------------------------------------------------==#
+
+import argparse
+import os
+import random
+import shutil
+import subprocess
+import tempfile
+
+# The purpose of this script is to measure the performance effect
+# of a PFP change in a statistically sound way, automating all the
+# tedious parts of doing so. It copies the test case (a Fleetbench binary)
+# into /tmp as well as running the test binaries from /tmp to reduce the influence on the test
+# machine's storage medium on the results. It accounts for measurement
+# bias caused by binary layout (using the --randomize-section-padding
+# flag to link the test binaries) and by environment variable size.
+# Runs of the base and test case are interleaved to account for environmental factors which may influence
+# the result due to the passage of time. The results
+# are collected into a results-base.csv and results-test.csv file in the output directory and may
+# be analyzed by the user with a tool such as ministat.
+#
+# Requirements: Linux host, /tmp is tmpfs.
+#
+# Example invocation for comparing the performance of the current commit
+# against the previous commit which is treated as the baseline, without
+# linking debug info:
+#
+# llvm/utils/pfp-bench \
+#   --base-commit HEAD^ \
+#   --test-commit HEAD \
+#   --project-path /path/to/fleetbench \
+#   --num-iterations 512 \
+#   --num-binary-variants 16 \
+#   --output-dir outdir
+#
+# Then this bash command will compare the real time of BM_PROTO_Arena in the
+# base and test cases.
+#
+# ministat -A \
+#   <(grep BM_PROTO_Arena results-base.csv | cut -d, -f3) \
+#   <(grep BM_PROTO_Arena results-test.csv | cut -d, -f3)
+
+# We don't want to copy stat() information when we copy the reproducer
+# to the temporary directory. Files in the Bazel store are read-only so this will
+# cause trouble when the linker writes the output file and when we want to clean
+# up the temporary directory. Python doesn't provide a way to disable copying
+# stat() information in shutil.copytree so we just monkeypatch shutil.copystat
+# to do nothing.
+shutil.copystat = lambda *args, **kwargs: 0
+
+parser = argparse.ArgumentParser(prog="benchmark_change.py")
+parser.add_argument("--base-commit", required=True)
+parser.add_argument("--test-commit", required=True)
+parser.add_argument("--project-path", required=True)
+parser.add_argument("--num-iterations", type=int, required=True)
+parser.add_argument("--num-binary-variants", type=int, required=True)
+parser.add_argument("--output-dir", required=True)
+args = parser.parse_args()
+
+test_dir = tempfile.mkdtemp()
+print(f"Using {test_dir} as temporary directory")
+
+os.makedirs(args.output_dir)
+print(f"Using {args.output_dir} as output directory")
+
+pfp_bazel = f"{os.path.dirname(__file__)}/pfp-bazel"
+bazel_flags = ["-c", "opt", "--copt=-gmlt", "--verbose_failures"]
+
+def extract_link_command(target):
+    link_command = None
+    for line in subprocess.Popen(
+        f"{pfp_bazel} aquery {' '.join(bazel_flags)} {target} | commandify", stdout=subprocess.PIPE, shell=True, cwd=args.project_path
+    ).stdout.readlines():
+        commands = line.decode("utf-8").split("&&")
+        for command in commands:
+            if " -o " in command and "-fuse-ld=" in command:
+                link_command = command.strip()
+    return link_command
+
+
+def generate_binary_variants(case_name):
+    target = "//fleetbench"
+    subprocess.run([pfp_bazel, "clean"], cwd=args.project_path)
+    subprocess.run([pfp_bazel, "build"] + bazel_flags + [target], cwd=args.project_path)
+    link_command = extract_link_command(target)
+
+    for i in range(0, args.num_binary_variants):
+        print(f"Generating binary variant {i} for {case_name} case")
+        command = f"{link_command} -o {test_dir}/fleetbench-{case_name}{i} -Wl,--randomize-section-padding={i}"
+        subprocess.run(command, check=True, shell=True, cwd=args.project_path)
+        command2 = f"ln -sf fleetbench.runfiles {test_dir}/fleetbench-{case_name}{i}.runfiles"
+        subprocess.run(command2, check=True, shell=True)
+
+
+# Make sure that there are no local changes.
+subprocess.run(["git", "diff", "--exit-code", "HEAD"], check=True)
+
+# Resolve the base and test commit, since if they are relative to HEAD we will
+# check out the wrong commit below.
+resolved_base_commit = subprocess.check_output(
+    ["git", "rev-parse", args.base_commit]
+).strip()
+resolved_test_commit = subprocess.check_output(
+    ["git", "rev-parse", args.test_commit]
+).strip()
+
+
+subprocess.run(["git", "checkout", resolved_base_commit], check=True)
+generate_binary_variants("base")
+
+subprocess.run(["git", "checkout", resolved_test_commit], check=True)
+generate_binary_variants("test")
+
+shutil.copytree(f"{args.project_path}/bazel-bin/fleetbench/fleetbench.runfiles", f"{test_dir}/fleetbench.runfiles")
+
+def benchmark_command(case_name, binary_variant):
+    return [f"{test_dir}/fleetbench-{case_name}{binary_variant}", "--benchmark_format=csv"]
+
+
+results_base_csv = open(f"{args.output_dir}/results-base.csv", "w")
+results_test_csv = open(f"{args.output_dir}/results-test.csv", "w")
+
+env = os.environ.copy()
+rng = random.Random(0)
+
+for i in range(0, args.num_iterations):
+    for v in range(0, args.num_binary_variants):
+        env['PAD'] = 'a' * rng.getrandbits(12)
+        subprocess.run(benchmark_command("base", v), stdout=results_base_csv, env=env)
+        env['PAD'] = 'a' * rng.getrandbits(12)
+        subprocess.run(benchmark_command("test", v), stdout=results_test_csv, env=env)
+
+shutil.rmtree(test_dir)

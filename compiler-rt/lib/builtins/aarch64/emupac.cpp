@@ -55,7 +55,11 @@ static const uint64_t ttbr1_mask = 1ULL << 55;
 static bool pac_supported() {
   register uintptr_t x30 __asm__("x30") = 1ULL << 55;
   __asm__ __volatile__("xpaclri" : "+r"(x30));
+#ifdef FORCE_NON_PAC
+  return !(x30 & (1ULL << 54));
+#else
   return x30 & (1ULL << 54);
+#endif
 }
 
 #ifdef __GCC_HAVE_DWARF2_CFI_ASM

@@ -1,6 +1,7 @@
 import("//compiler-rt/lib/builtins/sources.gni")
 import("//compiler-rt/target.gni")
 import("//llvm/utils/gn/build/buildflags.gni")
+import("//llvm/utils/gn/build/toolchain/target_flags.gni")
 
 lse_targets = []
 
@@ -83,6 +84,10 @@ static_library("builtins") {
 
   defines = builtins_defines
   sources = builtins_sources
+
+  if (emupac_force_non_pac) {
+    defines += [ "FORCE_NON_PAC" ]
+  }
 
   deps = lse_targets
   include_dirs = [ "//third-party/siphash/include" ]

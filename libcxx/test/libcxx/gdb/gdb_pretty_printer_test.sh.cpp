@@ -12,9 +12,6 @@
 // UNSUPPORTED: no-localization
 // UNSUPPORTED: c++03
 
-// TODO: Investigate why this fails on the arm bots
-// UNSUPPORTED: target=arm{{.*}}
-
 // The Android libc++ tests are run on a non-Android host, connected to an
 // Android device over adb. gdb needs special support to make this work (e.g.
 // gdbclient.py, ndk-gdb.py, gdbserver), and the Android organization doesn't
