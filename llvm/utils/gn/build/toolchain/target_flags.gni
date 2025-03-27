@@ -2,6 +2,12 @@ import("//llvm/triples.gni")
 import("//llvm/utils/gn/build/mac_sdk.gni")
 import("//llvm/utils/gn/build/toolchain/compiler.gni")
 
+declare_args() {
+  stage2_pointer_field_protection = "none"
+  emupac_force = false
+  emupac_force_non_pac = false
+}
+
 # Flags in this file are passed both to the compiler that's building
 # compiler-rt at build time (via normal gn cflags/ldflags), as well as to the
 # compiler building compiler-rt test programs at test time (via
@@ -62,4 +68,21 @@ if (current_cpu == "x86") {
   } else {
     target_flags += [ "-m32" ]
   }
+}
+
+if (current_toolchain != host_toolchain && current_cpu == "arm64") {
+  target_flags += [
+    "-march=armv8.3a",
+  ]
+}
+if (current_toolchain != host_toolchain) {
+  target_flags += [
+    "-fexperimental-pointer-field-protection=$stage2_pointer_field_protection",
+  ]
+  target_ldflags += [
+    "--rtlib=compiler-rt",
+    "--unwindlib=libunwind",
+    "-static-libgcc",
+    "-L" + rebase_path(root_build_dir) + "/lib",
+  ]
 }

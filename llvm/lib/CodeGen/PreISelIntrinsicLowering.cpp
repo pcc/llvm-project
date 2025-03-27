@@ -475,19 +475,23 @@ bool expandProtectedFieldPtr(Function &Intr) {
 
   auto CreateSign = [&](IRBuilder<> &B, Value *Val, Value *Disc,
                        OperandBundleDef DSBundle) {
+#ifndef FORCE_EMUPAC
     Function *F = B.GetInsertBlock()->getParent();
     Attribute FSAttr = F->getFnAttribute("target-features");
     if (FSAttr.isValid() && FSAttr.getValueAsString().contains("+pauth"))
       return B.CreateCall(SignIntr, {Val, B.getInt32(2), Disc}, DSBundle);
+#endif
     return B.CreateCall(EmuSignIntr, {Val, Disc}, DSBundle);
   };
 
   auto CreateAuth = [&](IRBuilder<> &B, Value *Val, Value *Disc,
                        OperandBundleDef DSBundle) {
+#ifndef FORCE_EMUPAC
     Function *F = B.GetInsertBlock()->getParent();
     Attribute FSAttr = F->getFnAttribute("target-features");
     if (FSAttr.isValid() && FSAttr.getValueAsString().contains("+pauth"))
       return B.CreateCall(AuthIntr, {Val, B.getInt32(2), Disc}, DSBundle);
+#endif
     return B.CreateCall(EmuAuthIntr, {Val, Disc}, DSBundle);
   };
 

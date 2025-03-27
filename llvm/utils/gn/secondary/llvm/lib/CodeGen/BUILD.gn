@@ -1,3 +1,5 @@
+import("//llvm/utils/gn/build/toolchain/target_flags.gni")
+
 static_library("CodeGen") {
   output_name = "LLVMCodeGen"
   public_deps = [
@@ -255,4 +257,7 @@ static_library("CodeGen") {
     "WindowScheduler.cpp",
     "XRayInstrumentation.cpp",
   ]
+  if (emupac_force) {
+    defines = [ "FORCE_EMUPAC" ]
+  }
 }
