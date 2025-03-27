@@ -1,0 +1,17 @@
+#!/bin/sh -xe
+
+shopt -s globstar
+
+tc="$(dirname $0)/../../ra"
+
+mtime_before="$(stat -c %Y $tc/bin/clang || true)"
+ninja -C $tc clang
+mtime_after="$(stat -c %Y $tc/bin/clang)"
+if [ "$mtime_before" != "$mtime_after"  ] ; then
+  rm -f $tc/stage2_*/**/*.o
+fi
+ninja -C $tc libcxx
+
+cflags=$(grep COMPILER_RT_TEST_COMPILER_CFLAGS= $tc/stage2_unix/toolchain.ninja | sed -e 's/\\\$ /:/g' | grep -o COMPILER_RT_TEST_COMPILER_CFLAGS='[^ ]*' | sed -e 's/:/ /g' | cut -d= -f2-)
+cflags="$cflags -Wno-unused-command-line-argument"
+CC=$tc/bin/clang CXX=$tc/bin/clang++ cmake -G Ninja -DCMAKE_C_FLAGS="$cflags" -DCMAKE_CXX_FLAGS="$cflags -stdlib=libc++" -DCMAKE_{EXE,SHARED,MODULE}_LINKER_FLAGS="$cflags -Wl,-Bstatic -lc++ -lc++abi -Wl,-Bdynamic -lm -fuse-ld=lld -static-libstdc++" "$@"

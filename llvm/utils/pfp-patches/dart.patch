@@ -1,0 +1,127 @@
+From 47e6d11cc8b6db025c43451ad68afd42c2892071 Mon Sep 17 00:00:00 2001
+From: Peter Collingbourne <pcc@google.com>
+Date: Mon, 3 Mar 2025 20:07:20 -0800
+Subject: [PATCH] PFP fixes
+
+---
+ runtime/platform/allocation.h | 4 ++++
+ runtime/vm/dart.cc            | 5 ++---
+ runtime/vm/isolate.cc         | 5 ++++-
+ runtime/vm/isolate.h          | 4 ++--
+ runtime/vm/timeline.cc        | 4 ++++
+ 5 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/runtime/platform/allocation.h b/runtime/platform/allocation.h
+index 26001ac54f2..5bc2a10960b 100644
+--- a/runtime/platform/allocation.h
++++ b/runtime/platform/allocation.h
+@@ -40,6 +40,10 @@ class MallocAllocated {
+  public:
+   MallocAllocated() {}
+ 
++  // Placement new.
++  void* operator new(size_t size, void *p) { return p; }
++  void* operator new[](size_t size, void *p) { return p; }
++
+   // Intercept operator new to produce clearer error messages when we run out
+   // of memory. Don't do this when running under ASAN so it can continue to
+   // check malloc/new/new[] are paired with free/delete/delete[] respectively.
+diff --git a/runtime/vm/dart.cc b/runtime/vm/dart.cc
+index 490549316ef..d78779a511a 100644
+--- a/runtime/vm/dart.cc
++++ b/runtime/vm/dart.cc
+@@ -165,12 +165,12 @@ class DartInitializationState : public AllStatic {
+ std::atomic<uint8_t> DartInitializationState::state_ = {kUnInitialized};
+ std::atomic<uint64_t> DartInitializationState::in_use_count_ = {0};
+ 
+-#if defined(DART_PRECOMPILER) || defined(DART_PRECOMPILED_RUNTIME)
+ static void CheckOffsets() {
+ #if !defined(IS_SIMARM_HOST64)
+   // These offsets are embedded in precompiled instructions. We need the
+   // compiler and the runtime to agree.
+   bool ok = true;
++  (void)ok;
+ #define CHECK_OFFSET(expr, offset)                                             \
+   if ((expr) != (offset)) {                                                    \
+     OS::PrintErr("%s got %" Pd ", %s expected %" Pd "\n", #expr,               \
+@@ -226,7 +226,6 @@ static void CheckOffsets() {
+     }                                                                          \
+   }
+ #define CHECK_CONSTANT(Class, Name) CHECK_OFFSET(Class::Name, Class##_##Name);
+-#endif  // defined(DART_PRECOMPILED_RUNTIME)
+ 
+   COMMON_OFFSETS_LIST(CHECK_FIELD, CHECK_ARRAY, CHECK_SIZEOF,
+                       CHECK_ARRAY_SIZEOF, CHECK_PAYLOAD_SIZEOF, CHECK_RANGE,
+@@ -258,8 +257,8 @@ static void CheckOffsets() {
+ #endif  // defined(DART_PRECOMPILER) || defined(DART_PRECOMPILED_RUNTIME)
+ 
+ char* Dart::DartInit(const Dart_InitializeParams* params) {
+-#if defined(DART_PRECOMPILER) || defined(DART_PRECOMPILED_RUNTIME)
+   CheckOffsets();
++#if defined(DART_PRECOMPILER) || defined(DART_PRECOMPILED_RUNTIME)
+ #elif defined(ARCH_IS_64_BIT) != defined(TARGET_ARCH_IS_64_BIT)
+   return Utils::StrDup(
+       "JIT cannot simulate target architecture with different word size than "
+diff --git a/runtime/vm/isolate.cc b/runtime/vm/isolate.cc
+index 11cb004f448..c48623b8907 100644
+--- a/runtime/vm/isolate.cc
++++ b/runtime/vm/isolate.cc
+@@ -448,6 +448,8 @@ IsolateGroup::~IsolateGroup() {
+   delete debugger_;
+   debugger_ = nullptr;
+ #endif
++
++  delete object_store_;
+ }
+ 
+ void IsolateGroup::RegisterIsolate(Isolate* isolate) {
+@@ -1112,7 +1114,8 @@ bool Isolate::SendInternalLibMessage(Dart_Port main_port,
+ }
+ 
+ void IsolateGroup::set_object_store(ObjectStore* object_store) {
+-  object_store_.reset(object_store);
++  delete object_store_;
++  object_store_ = object_store;
+ }
+ 
+ class IsolateMessageHandler : public MessageHandler {
+diff --git a/runtime/vm/isolate.h b/runtime/vm/isolate.h
+index 9f5d27fb404..5b501b3fc4f 100644
+--- a/runtime/vm/isolate.h
++++ b/runtime/vm/isolate.h
+@@ -506,7 +506,7 @@ class IsolateGroup : public IntrusiveDListEntry<IsolateGroup> {
+   void DropOriginalClassTable();
+ 
+   StoreBuffer* store_buffer() const { return store_buffer_.get(); }
+-  ObjectStore* object_store() const { return object_store_.get(); }
++  ObjectStore* object_store() const { return object_store_; }
+   Mutex* symbols_mutex() { return &symbols_mutex_; }
+   Mutex* type_canonicalization_mutex() { return &type_canonicalization_mutex_; }
+   Mutex* type_arguments_canonicalization_mutex() {
+@@ -819,7 +819,7 @@ class IsolateGroup : public IntrusiveDListEntry<IsolateGroup> {
+   // Accessed from generated code.
+   ClassTable* class_table_;
+   AcqRelAtomic<ClassPtr*> cached_class_table_table_;
+-  std::unique_ptr<ObjectStore> object_store_;
++  ObjectStore* object_store_;
+   // End accessed from generated code.
+ 
+   ClassTableAllocator class_table_allocator_;
+diff --git a/runtime/vm/timeline.cc b/runtime/vm/timeline.cc
+index 211f0e28741..ba07afac27c 100644
+--- a/runtime/vm/timeline.cc
++++ b/runtime/vm/timeline.cc
+@@ -1595,6 +1595,10 @@ TimelineEventFixedBufferRecorder::TimelineEventFixedBufferRecorder(
+   if (memory_ == nullptr) {
+     OUT_OF_MEMORY();
+   }
++  for (intptr_t i = 0; i != num_blocks_; ++i) {
++    new (reinterpret_cast<char*>(memory_->address()) +
++         i * sizeof(TimelineEventBlock)) TimelineEventBlock(i);
++  }
+   blocks_ = reinterpret_cast<TimelineEventBlock*>(memory_->address());
+ }
+ 
+-- 
+2.48.1
+
