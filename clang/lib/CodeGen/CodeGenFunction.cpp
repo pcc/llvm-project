@@ -2197,11 +2197,12 @@ Address CodeGenFunction::EmitAddressOfPFPField(Address RecordPtr,
           {RecordPtr.getBasePointer(), Builder.getInt64(Offset.getQuantity()),
            llvm::MetadataAsValue::get(
                getLLVMContext(),
-               llvm::MDString::get(getLLVMContext(), CGM.getPFPFieldName(Field))),
+               llvm::MDString::get(getLLVMContext(),
+                                   CGM.getPFPFieldName(Field))),
            getContext().arePFPFieldsTriviallyRelocatable(Field->getParent())
                ? Builder.getFalse()
                : Builder.getTrue()}),
-      VoidPtrTy, RecordPtr.getAlignment());
+      VoidPtrTy, RecordPtr.getAlignment().alignmentAtOffset(Offset));
 }
 
 void
