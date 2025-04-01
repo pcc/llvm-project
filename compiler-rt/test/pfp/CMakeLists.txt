@@ -1,8 +1,13 @@
 set(PFP_TESTSUITES)
 set(PFP_TEST_DEPS
-  ${SANITIZER_COMMON_LIT_TEST_DEPS}
-  lld
-  clang)
+  ${SANITIZER_COMMON_LIT_TEST_DEPS})
+
+if(COMPILER_RT_HAS_LLD)
+  set(CONFIG_NAME "lld-${CONFIG_NAME}")
+  if (TARGET lld)
+    list(APPEND PFP_TEST_DEPS lld)
+    endif()
+endif()
 
 set(PFP_TEST_ARCH ${X86_64} ${ARM64})
 
