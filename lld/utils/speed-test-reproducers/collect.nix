@@ -41,6 +41,7 @@ let
           bintools = stdenv.cc.bintools.override {
             extraBuildCommands = ''
               wrap ${stdenv.cc.targetPrefix}nix-wrap-lld ${nixpkgsDir}/pkgs/build-support/bintools-wrapper/ld-wrapper.sh ${lld}/bin/ld.lld
+              export lz4=${pkgs.lib.getBin pkgs.buildPackages.lz4}/bin/lz4
               substituteAll ${./ld-wrapper.sh} $out/bin/${stdenv.cc.targetPrefix}ld
               chmod +x $out/bin/${stdenv.cc.targetPrefix}ld
               substituteAll ${./ld-wrapper.sh} $out/bin/${stdenv.cc.targetPrefix}ld.lld
