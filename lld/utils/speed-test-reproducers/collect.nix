@@ -55,10 +55,10 @@ let
           cc = stdenv.cc.override { inherit bintools; };
         });
       withReproducerCollectingStdenv = pkg: pkg.override {
-        stdenv = reproducerCollectingStdenv pkgs.stdenv pkgs.lld;
+        stdenv = reproducerCollectingStdenv pkgs.stdenv pkgs.buildPackages.lld;
       };
       withReproducerCollectingClangStdenv = pkg: pkg.override {
-        clangStdenv = reproducerCollectingStdenv pkgs.clangStdenv pkgs.lld;
+        clangStdenv = reproducerCollectingStdenv pkgs.clangStdenv pkgs.buildPackages.lld;
       };
     in
     {
@@ -115,10 +115,29 @@ let
       ladybird = withReproducerCollectingStdenv pkgs.ladybird;
       llvm = withReproducerCollectingStdenv pkgs.llvm;
       webkitgtk = withReproducerCollectingClangStdenv pkgs.webkitgtk;
+      hello = withReproducerCollectingStdenv pkgs.hello;
     };
+    targets = {
+      x86_64 = reproducerPkgs { config = "x86_64-unknown-linux-gnu"; };
+      aarch64 = reproducerPkgs { config = "aarch64-unknown-linux-gnu"; };
+      riscv64 = reproducerPkgs { config = "riscv64-unknown-linux-gnu"; };
+    };
+    nativePkgs = nixpkgs { };
 in
-{
-  x86_64 = reproducerPkgs { config = "x86_64-unknown-linux-gnu"; };
-  aarch64 = reproducerPkgs { config = "aarch64-unknown-linux-gnu"; };
-  riscv64 = reproducerPkgs { config = "riscv64-unknown-linux-gnu"; };
+derivation {
+  name = "lld-speed-test";
+  system = builtins.currentSystem;
+  builder = "${nativePkgs.bash}/bin/bash";
+  args = [
+    "-c"
+    ''
+      extract_reproducer() {
+        ${nativePkgs.coreutils}/bin/mkdir -p $out/$2
+        ${nativePkgs.llvm}/bin/llvm-objcopy -O binary --only-section=.lld_repro --set-section-flags .lld_repro=alloc $1 - | ${nativePkgs.gnutar}/bin/tar x -I ${nativePkgs.lib.getBin nativePkgs.buildPackages.lz4}/bin/lz4 --strip-components=1 -C $out/$2
+      }
+
+      extract_reproducer ${targets.aarch64.hello}/bin/hello hello-arm64
+      extract_reproducer ${targets.x86_64.hello}/bin/hello hello-x64
+    ''
+  ];
 }
