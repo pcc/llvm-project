@@ -25,7 +25,8 @@
 # - llvm (all targets)
 
 {
-  nixpkgsDir ? fetchTarball "https://github.com/NixOS/nixpkgs/archive/25c2561fdf299c850b8c7cdfaa09d0a3f2bc2e89.tar.gz",
+# nixpkgsDir ? fetchTarball "https://github.com/NixOS/nixpkgs/archive/25c2561fdf299c850b8c7cdfaa09d0a3f2bc2e89.tar.gz",
+  nixpkgsDir ? "${/home/pcc/nix/nixpkgs}",
   nixpkgs ? import nixpkgsDir,
 }:
 let
