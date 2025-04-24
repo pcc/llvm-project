@@ -139,14 +139,13 @@ derivation {
       extract_reproducer ${targets.aarch64.hello}/bin/hello hello-arm64
       extract_reproducer ${targets.x86_64.hello}/bin/hello hello-x64
       extract_reproducer ${targets.aarch64.chrome}/libexec/chromium/chromium chrome
-      extract_reproducer ${targets.aarch64.ladybird}/bin/liblagom-web.so ladybird
+      extract_reproducer ${targets.aarch64.ladybird}/lib/liblagom-web.so ladybird
       extract_reproducer ${targets.aarch64.firefox}/lib/firefox/libxul.so firefox-arm64
       extract_reproducer ${targets.x86_64.firefox}/lib/firefox/libxul.so firefox-x64
       extract_reproducer ${targets.riscv64.firefox}/lib/firefox/libxul.so firefox-riscv64
-      extract_reproducer ${targets.aarch64.webkitgtk}/lib/libwebkit2gtk-4.0.so webkitgtk
-      extract_reproducer ${targets.aarch64.llvm}/lib/libLLVM.so llvm-arm64
-      extract_reproducer ${targets.x86_64.llvm}/lib/libLLVM.so llvm-x64
-      extract_reproducer ${targets.riscv64.llvm}/lib/libLLVM.so llvm-riscv64
+      extract_reproducer ${nativePkgs.lib.getLib targets.aarch64.llvm}/lib/libLLVM.so llvm-arm64
+      extract_reproducer ${nativePkgs.lib.getLib targets.x86_64.llvm}/lib/libLLVM.so llvm-x64
+      extract_reproducer ${nativePkgs.lib.getLib targets.riscv64.llvm}/lib/libLLVM.so llvm-riscv64
     ''
   ];
 }
