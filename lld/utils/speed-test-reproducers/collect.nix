@@ -26,7 +26,7 @@
 
 {
 # nixpkgsDir ? fetchTarball "https://github.com/NixOS/nixpkgs/archive/25c2561fdf299c850b8c7cdfaa09d0a3f2bc2e89.tar.gz",
-  nixpkgsDir ? "${/home/pcc/nix/nixpkgs}",
+  nixpkgsDir ? fetchTarball "https://github.com/pcc/nixpkgs/archive/d61b8acdc2aa999109696237d0d3db367dfaf7ba.tar.gz",
   nixpkgs ? import nixpkgsDir,
 }:
 let
