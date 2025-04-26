@@ -6,16 +6,15 @@
 # from any project packaged by Nix without project-specific knowledge, but as
 # you can see below, many interesting ones need a few hacks.
 #
-# If you have Nix installed, you can collect a reproducer with a variant of
-# the following commands:
+# If you have Nix installed, you can build the reproducers with the following
+# command:
 #
-# TMPDIR=/var/tmp nix-build collect.nix --attr x86_64.chromium
-# llvm-objcopy -O binary --only-section=.lld_repro --set-section-flags .lld_repro=alloc result/libexec/chromium/chromium repro.tar.gz
-# tar xzf repro.tar.gz
+# TMPDIR=/var/tmp nix-build -j6 --log-format bar collect.nix
 #
-# This will result in building Chromium, which will take some time, and if
-# you build for a non-native target it will also build most of the dependencies.
-# We will eventually publish the tarballs to make this easier to use.
+# This will result in building several large projects including Chromium and
+# Firefox, which will take some time, and it will also build most of the
+# dependencies for non-native targets. Eventually you will get a result
+# directory containing all the reproducers.
 #
 # The following projects have been tested successfully:
 # - chrome (native only, cross builds fail building the qtbase dependency)
