@@ -34,7 +34,7 @@ let
     let
       pkgs = nixpkgs { inherit crossSystem; };
       # Wraps the given stdenv and lld package into a variant that collects
-      # the reproducer.
+      # the reproducer and builds with debug info.
       reproducerCollectingStdenv =
         stdenv: lld:
         let
@@ -49,10 +49,10 @@ let
             '';
           };
         in
-        stdenv.override (old: {
+        pkgs.withCFlags [ "-g1" ] (stdenv.override (old: {
           allowedRequisites = null;
           cc = stdenv.cc.override { inherit bintools; };
-        });
+        }));
       withReproducerCollectingStdenv = pkg: pkg.override {
         stdenv = reproducerCollectingStdenv pkgs.stdenv pkgs.buildPackages.lld;
       };
