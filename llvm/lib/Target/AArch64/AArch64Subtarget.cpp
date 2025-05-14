@@ -674,17 +674,10 @@ AArch64Subtarget::getPtrAuthBlockAddressDiscriminatorIfEnabled(
       (Twine(ParentFn.getName()) + " blockaddress").str());
 }
 
-bool AArch64Subtarget::isX16X17Safer(const MachineFunction &MF) const {
+bool AArch64Subtarget::isX16X17Safer() const {
   // The Darwin kernel implements special protections for x16 and x17 so we
   // should prefer to use those registers on that platform.
-  if (isTargetDarwin())
-    return true;
-  // Traps are only implemented for the pseudo instructions, but are only
-  // necessary if FEAT_FPAC is not implemented.
-  if (hasFPAC())
-    return false;
-  return MF.getFunction().hasFnAttribute("ptrauth-auth-traps") ||
-         PtrauthAuthChecks == PtrauthCheckMode::Trap;
+  return isTargetDarwin();
 }
 
 bool AArch64Subtarget::enableMachinePipeliner() const {

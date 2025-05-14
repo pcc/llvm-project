@@ -164,6 +164,11 @@ public:
   // Emit the sequence for AUT or AUTPAC.
   void emitPtrauthAuthResign(const MachineInstr *MI);
 
+  // Emit R_AARCH64_INST32, the deactivation symbol relocation. Returns true if
+  // no instruction should be emitted because the deactivation symbol is defined
+  // in the current module so this function emitted a NOP instead.
+  bool emitDeactivationSymbolRelocation(Value *DS);
+
   // Emit the sequence to compute the discriminator.
   //
   // ScratchReg should be x16/x17.
@@ -1863,7 +1868,6 @@ Register AArch64AsmPrinter::emitPtrauthDiscriminator(uint16_t Disc,
                                                      Register AddrDisc,
                                                      Register ScratchReg,
                                                      bool MayUseAddrAsScratch) {
-  assert(ScratchReg == AArch64::X16 || ScratchReg == AArch64::X17);
   // So far we've used NoRegister in pseudos.  Now we need real encodings.
   if (AddrDisc == AArch64::NoRegister)
     AddrDisc = AArch64::XZR;
@@ -1883,7 +1887,8 @@ Register AArch64AsmPrinter::emitPtrauthDiscriminator(uint16_t Disc,
 
   // Check if we can save one MOV instruction.
   assert(MayUseAddrAsScratch || ScratchReg != AddrDisc);
-  bool AddrDiscIsSafe = AddrDisc == AArch64::X16 || AddrDisc == AArch64::X17;
+  bool AddrDiscIsSafe = AddrDisc == AArch64::X16 || AddrDisc == AArch64::X17 ||
+                        !STI->isX16X17Safer();
   if (MayUseAddrAsScratch && AddrDiscIsSafe)
     ScratchReg = AddrDisc;
   else
@@ -2061,6 +2066,25 @@ void AArch64AsmPrinter::emitPtrauthTailCallHardening(const MachineInstr *TC) {
       /*ShouldTrap=*/true, /*OnFailure=*/nullptr);
 }
 
+bool AArch64AsmPrinter::emitDeactivationSymbolRelocation(Value *DS) {
+  if (DS) {
+    if (isa<GlobalAlias>(DS)) {
+      // Just emit the nop directly.
+      EmitToStreamer(MCInstBuilder(AArch64::HINT).addImm(0));
+      return true;
+    }
+    MCSymbol *Dot = OutContext.createTempSymbol();
+    OutStreamer->emitLabel(Dot);
+    const MCExpr *DeactDotExpr = MCSymbolRefExpr::create(Dot, OutContext);
+
+    const MCExpr *DSExpr = MCSymbolRefExpr::create(
+        OutContext.getOrCreateSymbol(DS->getName()), OutContext);
+    OutStreamer->emitRelocDirective(*DeactDotExpr, "R_AARCH64_INST32", DSExpr,
+                                    SMLoc(), *TM.getMCSubtargetInfo());
+  }
+  return false;
+}
+
 void AArch64AsmPrinter::emitPtrauthAuthResign(const MachineInstr *MI) {
   const bool IsAUTPAC = MI->getOpcode() == AArch64::AUTPAC;
 
@@ -2101,26 +2125,45 @@ void AArch64AsmPrinter::emitPtrauthAuthResign(const MachineInstr *MI) {
     break;
   }
 
-  auto AUTKey = (AArch64PACKey::ID)MI->getOperand(0).getImm();
-  uint64_t AUTDisc = MI->getOperand(1).getImm();
-  unsigned AUTAddrDisc = MI->getOperand(2).getReg();
+  Register AUTVal;
+  AArch64PACKey::ID AUTKey;
+  uint64_t AUTDisc;
+  const MachineOperand *AUTAddrDisc;
+  Register Scratch;
+
+  if (MI->getOpcode() == AArch64::AUTx16x17 ||
+      MI->getOpcode() == AArch64::AUTPAC) {
+    AUTVal = AArch64::X16;
+    Scratch = AArch64::X17;
+    AUTKey = (AArch64PACKey::ID)MI->getOperand(0).getImm();
+    AUTDisc = MI->getOperand(1).getImm();
+    AUTAddrDisc = &MI->getOperand(2);
+  } else {
+    AUTVal = MI->getOperand(0).getReg();
+    Scratch = MI->getOperand(1).getReg();
+    AUTKey = (AArch64PACKey::ID)MI->getOperand(3).getImm();
+    AUTDisc = MI->getOperand(4).getImm();
+    AUTAddrDisc = &MI->getOperand(5);
+  }
 
   // Compute aut discriminator into x17
   assert(isUInt<16>(AUTDisc));
-  Register AUTDiscReg =
-      emitPtrauthDiscriminator(AUTDisc, AUTAddrDisc, AArch64::X17);
+  Register AUTDiscReg = emitPtrauthDiscriminator(
+      AUTDisc, AUTAddrDisc->getReg(), Scratch, AUTAddrDisc->isKill());
   bool AUTZero = AUTDiscReg == AArch64::XZR;
   unsigned AUTOpc = getAUTOpcodeForKey(AUTKey, AUTZero);
 
-  //  autiza x16      ; if  AUTZero
-  //  autia x16, x17  ; if !AUTZero
-  MCInst AUTInst;
-  AUTInst.setOpcode(AUTOpc);
-  AUTInst.addOperand(MCOperand::createReg(AArch64::X16));
-  AUTInst.addOperand(MCOperand::createReg(AArch64::X16));
-  if (!AUTZero)
-    AUTInst.addOperand(MCOperand::createReg(AUTDiscReg));
-  EmitToStreamer(*OutStreamer, AUTInst);
+  if (!emitDeactivationSymbolRelocation(MI->getDeactivationSymbol())) {
+    //  autiza x16      ; if  AUTZero
+    //  autia x16, x17  ; if !AUTZero
+    MCInst AUTInst;
+    AUTInst.setOpcode(AUTOpc);
+    AUTInst.addOperand(MCOperand::createReg(AUTVal));
+    AUTInst.addOperand(MCOperand::createReg(AUTVal));
+    if (!AUTZero)
+      AUTInst.addOperand(MCOperand::createReg(AUTDiscReg));
+    EmitToStreamer(*OutStreamer, AUTInst);
+  }
 
   // Unchecked or checked-but-non-trapping AUT is just an "AUT": we're done.
   if (!IsAUTPAC && (!ShouldCheck || !ShouldTrap))
@@ -2132,7 +2175,7 @@ void AArch64AsmPrinter::emitPtrauthAuthResign(const MachineInstr *MI) {
     if (IsAUTPAC && !ShouldTrap)
       EndSym = createTempSymbol("resign_end_");
 
-    emitPtrauthCheckAuthenticatedValue(AArch64::X16, AArch64::X17, AUTKey,
+    emitPtrauthCheckAuthenticatedValue(AUTVal, Scratch, AUTKey,
                                        AArch64PAuth::AuthCheckMethod::XPAC,
                                        ShouldTrap, EndSym);
   }
@@ -2150,7 +2193,7 @@ void AArch64AsmPrinter::emitPtrauthAuthResign(const MachineInstr *MI) {
   // Compute pac discriminator into x17
   assert(isUInt<16>(PACDisc));
   Register PACDiscReg =
-      emitPtrauthDiscriminator(PACDisc, PACAddrDisc, AArch64::X17);
+      emitPtrauthDiscriminator(PACDisc, PACAddrDisc, Scratch);
   bool PACZero = PACDiscReg == AArch64::XZR;
   unsigned PACOpc = getPACOpcodeForKey(PACKey, PACZero);
 
@@ -2158,8 +2201,8 @@ void AArch64AsmPrinter::emitPtrauthAuthResign(const MachineInstr *MI) {
   //  pacib x16, x17  ; if !PACZero
   MCInst PACInst;
   PACInst.setOpcode(PACOpc);
-  PACInst.addOperand(MCOperand::createReg(AArch64::X16));
-  PACInst.addOperand(MCOperand::createReg(AArch64::X16));
+  PACInst.addOperand(MCOperand::createReg(AUTVal));
+  PACInst.addOperand(MCOperand::createReg(AUTVal));
   if (!PACZero)
     PACInst.addOperand(MCOperand::createReg(PACDiscReg));
   EmitToStreamer(*OutStreamer, PACInst);
@@ -2917,22 +2960,8 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
     OutStreamer->emitLabel(LOHLabel);
   }
 
-  if (MI->getDeactivationSymbol()) {
-    if (isa<GlobalAlias>(MI->getDeactivationSymbol())) {
-      // Just emit the nop directly.
-      EmitToStreamer(MCInstBuilder(AArch64::HINT).addImm(0));
-      return;
-    }
-    MCSymbol *Dot = OutContext.createTempSymbol();
-    OutStreamer->emitLabel(Dot);
-    const MCExpr *DeactDotExpr = MCSymbolRefExpr::create(Dot, OutContext);
-
-    MCSymbol *DS =
-        OutContext.getOrCreateSymbol(MI->getDeactivationSymbol()->getName());
-    const MCExpr *DSExpr = MCSymbolRefExpr::create(DS, OutContext);
-    OutStreamer->emitRelocDirective(*DeactDotExpr, "R_AARCH64_INST32", DSExpr,
-                                    SMLoc(), *TM.getMCSubtargetInfo());
-  }
+  if (emitDeactivationSymbolRelocation(MI->getDeactivationSymbol()))
+    return;
 
   AArch64TargetStreamer *TS =
     static_cast<AArch64TargetStreamer *>(OutStreamer->getTargetStreamer());
@@ -3044,6 +3073,7 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
   }
 
   case AArch64::AUTx16x17:
+  case AArch64::AUTxMxN:
   case AArch64::AUTPAC:
     emitPtrauthAuthResign(MI);
     return;
