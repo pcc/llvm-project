@@ -1542,6 +1542,9 @@ template <class ELFT> void Writer<ELFT>::finalizeAddressDependentContent() {
   if (ctx.arg.randomizeSectionPadding)
     randomizeSectionPadding(ctx);
 
+  if (ctx.arg.relaxCFIJumpTables)
+    ctx.target->relaxCFIJumpTables();
+
   // Iterate until a fixed point is reached, skipping relocatable links since
   // the final addresses are unavailable.
   uint32_t pass = 0, assignPasses = 0;
