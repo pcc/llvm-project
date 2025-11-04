@@ -254,6 +254,15 @@ int clang_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
     return 1;
   }
 
+  SmallVector<const char *, 256> NewArgs;
+  for (auto *A : Args) {
+    if (strcmp(A, "-g0") == 0)
+      NewArgs.push_back("-g");
+    else if (strcmp(A, "-Wl,-S") != 0)
+      NewArgs.push_back(A);
+  }
+  Args = NewArgs;
+
   // Handle -cc1 integrated tools.
   if (Args.size() >= 2 && StringRef(Args[1]).starts_with("-cc1"))
     return ExecuteCC1Tool(Args, ToolContext);
