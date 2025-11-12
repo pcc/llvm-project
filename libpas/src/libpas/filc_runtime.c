@@ -6109,7 +6109,10 @@ bool filc_global_initialization_start(filc_thread* my_thread, const filc_origin*
 
     if (verbose)
         pas_log("initializing global (gptr = %p, object = %p)\n", pizlonated_gptr, object);
-    
+
+    if (!(object->aux & FILC_OBJECT_FLAG_GLOBAL))
+        object->aux = (object->aux << 16) | (object->aux >> 48);
+
     PAS_ASSERT(filc_thread_is_entered(my_thread));
     
     if (passed_origin)

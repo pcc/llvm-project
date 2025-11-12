@@ -1360,6 +1360,7 @@ class Pizlonator {
   StructType* InlineFrameTy;
   StructType* OriginWithEHTy;
   StructType* ObjectTy;
+  StructType* ObjectWithFlagsTy;
   StructType* FrameTy;
   StructType* ThreadTy;
   StructType* ConstantRelocationTy;
@@ -1945,7 +1946,7 @@ class Pizlonator {
   Value* flagsForLower(Value* Lower, Instruction* InsertBefore) {
     Value* Aux = auxForLower(Lower, InsertBefore);
     Instruction* Flags = BinaryOperator::Create(
-      Instruction::LShr, Aux, ConstantInt::get(IntPtrTy, ObjectAuxFlagsShift), "filc_object_flags",
+      Instruction::And, Aux, ConstantInt::get(IntPtrTy, 0xffff), "filc_object_flags",
       InsertBefore);
     Flags->setDebugLoc(InsertBefore->getDebugLoc());
     return Flags;
@@ -1954,7 +1955,7 @@ class Pizlonator {
   Value* auxPtrForLower(Value* Lower, Instruction* InsertBefore) {
     Value* Aux = auxForLower(Lower, InsertBefore);
     Instruction* AuxPtrAsInt = BinaryOperator::Create(
-      Instruction::And, Aux, ConstantInt::get(IntPtrTy, ObjectAuxPtrMask), "filc_aux_ptr_as_int",
+      Instruction::AShr, Aux, ConstantInt::get(IntPtrTy, 16), "filc_aux_ptr_as_int",
       InsertBefore);
     AuxPtrAsInt->setDebugLoc(InsertBefore->getDebugLoc());
     Instruction* AuxPtr = new IntToPtrInst(AuxPtrAsInt, RawPtrTy, "filc_aux_ptr", InsertBefore);
@@ -9731,6 +9732,7 @@ public:
     OriginWithEHTy = StructType::create(
       { RawPtrTy, Int32Ty, Int32Ty, RawPtrTy }, "filc_origin_with_eh");
     ObjectTy = StructType::create({ RawPtrTy, RawPtrTy }, "filc_object");
+    ObjectWithFlagsTy = StructType::create({ RawPtrTy, Int16Ty, RawPtrTy }, "filc_object_with_flags", true);
     FrameTy = StructType::create({ RawPtrTy, RawPtrTy, RawPtrTy }, "filc_frame");
     UnsafeFuncTy = FunctionType::get(IntPtrTy, true);
 
@@ -10067,8 +10069,9 @@ public:
 
         PutImplIntoComdat(F, NewF);
 
-        GlobalVariable* NewObjectG = new GlobalVariable(
-          M, ObjectTy, true, GlobalValue::InternalLinkage, nullptr, "pizlonatedFO_" + F->getName());
+        GlobalVariable *NewObjectG = new GlobalVariable(
+            M, ObjectWithFlagsTy, true, GlobalValue::InternalLinkage, nullptr,
+            "pizlonatedFO_" + F->getName());
         PutImplIntoComdat(F, NewObjectG);
         Constant* LowerAndUpper =
           ConstantExpr::getGetElementPtr(ObjectTy, NewObjectG, ConstantInt::get(IntPtrTy, 1));
@@ -10076,13 +10079,9 @@ public:
           ObjectFlagGlobal |
           ObjectFlagReadonly |
           (SpecialTypeFunction << ObjectFlagsSpecialShift);
-        Constant* NewObjC = ConstantStruct::get(
-          ObjectTy,
-          { LowerAndUpper,
-            ConstantExpr::getGetElementPtr(
-              Int8Ty, NewF,
-              ConstantInt::get(
-                IntPtrTy, static_cast<uintptr_t>(ObjectFlags) << ObjectAuxFlagsShift)) });
+        Constant *NewObjC = ConstantStruct::get(
+            ObjectWithFlagsTy,
+            {LowerAndUpper, ConstantInt::get(Int16Ty, ObjectFlags), NewF});
         NewObjectG->setInitializer(NewObjC);
         FunctionToLower[F] = LowerAndUpper;
       }
@@ -10278,7 +10277,7 @@ public:
       StructType* ObjectGTy = StructType::get(C, ObjectGTyFields);
 
       GlobalVariable* NewDataG = new GlobalVariable(
-        M, ObjectGTy, IsConstant, GlobalValue::InternalLinkage, nullptr, "pizlonatedDO_" + G->getName());
+        M, ObjectGTy, false, GlobalValue::InternalLinkage, nullptr, "pizlonatedDO_" + G->getName());
       PutImplIntoComdat(G, NewDataG);
 
       uint16_t ObjectFlags = ObjectFlagGlobal;

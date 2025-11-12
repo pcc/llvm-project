@@ -139,6 +139,7 @@ typedef struct filc_mark_stack filc_mark_stack;
 typedef struct filc_marker filc_marker;
 typedef struct filc_native_frame filc_native_frame;
 typedef struct filc_object filc_object;
+typedef struct filc_object_with_flags filc_object_with_flags;
 typedef struct filc_object_array filc_object_array;
 typedef struct filc_object_array_impl filc_object_array_impl;
 typedef struct filc_optimized_access_check_origin filc_optimized_access_check_origin;
@@ -439,6 +440,15 @@ struct filc_object {
        the abstract interpreter deals with check merging. */
     void* upper;
     uintptr_t aux;
+};
+
+/* This is a gross hack to create a globally initializer with the aux pointer shifted by 16
+ * bits as required by InvisiCaps 1.5. This should only be used in initializers because its size does
+ * not match filc_object. Also, it is not compatible with big-endian, but who cares these days. */
+struct __attribute__((packed)) filc_object_with_flags {
+    void* upper;
+    uint16_t flags;
+    void* fptr;
 };
 
 struct filc_alignment_header {
@@ -2179,16 +2189,15 @@ static inline void filc_testing_validate_ptr(filc_ptr ptr)
 
 static inline char* filc_aux_get_ptr(uintptr_t aux)
 {
-    return (char*)(aux & FILC_OBJECT_AUX_PTR_MASK);
+    return (char*)(aux >> 16);
 }
 
 static inline filc_object_flags filc_aux_get_flags(uintptr_t aux)
 {
-    return (filc_object_flags)(aux >> FILC_OBJECT_AUX_FLAGS_SHIFT);
+    return (filc_object_flags)(aux & 0xffff);
 }
 
-#define FILC_AUX_CREATE(flags, ptr) ((uintptr_t)(ptr) + \
-                                     ((uintptr_t)(flags) << FILC_OBJECT_AUX_FLAGS_SHIFT))
+#define FILC_AUX_CREATE(flags, ptr) (((intptr_t)(ptr) << 16) + ((uintptr_t)(flags)))
 
 static inline uintptr_t filc_aux_create(filc_object_flags flags, char* ptr)
 {
